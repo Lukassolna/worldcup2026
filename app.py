@@ -130,8 +130,9 @@ if page == "🏆 Standings":
     st.title("🏆 Standings")
     df = load(STANDINGS_SHEET)
     if df is not None and not df.empty:
+        points_col = df.columns[1]
         st.dataframe(
-            df.sort_values(df.columns[0]).reset_index(drop=True),
+            df.sort_values(points_col, ascending=False).reset_index(drop=True),
             use_container_width=True,
             hide_index=True,
         )
@@ -281,6 +282,8 @@ elif page == "🔐 lukasadmin":
     if st.button("💾 Save Result", use_container_width=True):
         current_facit[selected_match] = new_result.strip()
         conn.update(worksheet=FACIT_SHEET, data=pd.DataFrame([current_facit]))
+        timestamp = datetime.now(STOCKHOLM).strftime("%Y-%m-%d %H:%M:%S")
+        conn.update(worksheet="LastUpdate", data=pd.DataFrame([[timestamp]]))
         st.success(f"Saved: {selected_match} → {new_result}")
         st.rerun()
 
