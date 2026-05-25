@@ -94,7 +94,7 @@ header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-ANSWERS_SHEET  = "Formulärsvar 1"
+ANSWERS_SHEET  = "Answers"
 FACIT_SHEET    = "Facit"
 STANDINGS_SHEET = "Standings"
 GOAL_COL = "Hur många mål görs det totalt under alla 72 matcher i gruppspelet?"
