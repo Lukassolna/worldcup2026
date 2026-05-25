@@ -236,17 +236,37 @@ else:
         st.warning("No answers found.")
         st.stop()
 
-    def style_pts(df):
-        def color(val):
-            if val == 3:
-                return "background-color: #4CAF50; color: white"
-            if val == 1:
-                return "background-color: #CDDC39"
+    TABLE_CSS = """
+    <style>
+    .tips-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .tips-table th { background: #444; color: #fff; padding: 4px 6px; text-align: left; font-weight: 600; }
+    .tips-table td { padding: 3px 6px; border-bottom: 1px solid #e0e0e0; white-space: nowrap; }
+    .pts-3 { background: #4CAF50; color: white; font-weight: bold; border-radius: 3px; padding: 1px 4px; }
+    .pts-1 { background: #CDDC39; border-radius: 3px; padding: 1px 4px; }
+    </style>
+    """
+
+    def pts_cell(pts):
+        if pts == 3:
+            return f'<span class="pts-3">3</span>'
+        if pts == 1:
+            return f'<span class="pts-1">1</span>'
+        if pts == 0:
+            return "0"
+        return ""
+
+    def render_table(rows):
+        if not rows:
             return ""
-        if "Pts" in df.columns:
-            df["Pts"] = df["Pts"].astype("Int64")
-            return df.style.map(color, subset=["Pts"])
-        return df.style
+        headers = list(rows[0].keys())
+        ths = "".join(f"<th>{h}</th>" for h in headers)
+        trs = ""
+        for row in rows:
+            tds = ""
+            for h, v in row.items():
+                tds += f"<td>{v}</td>"
+            trs += f"<tr>{tds}</tr>"
+        return TABLE_CSS + f'<table class="tips-table"><thead><tr>{ths}</tr></thead><tbody>{trs}</tbody></table>'
 
     view_mode = st.radio("View by", ["Person", "Match"], horizontal=True)
 
@@ -262,11 +282,10 @@ else:
             entry  = {"Time": kickoff_time(match), "Match": match, "Tip": tip}
             if result and result != "nan":
                 entry["Result"] = result
-                entry["Pts"] = calc_points(tip, result)
+                entry["Pts"] = pts_cell(calc_points(tip, result))
             data.append(entry)
 
-        df_tips = pd.DataFrame(data)
-        st.dataframe(style_pts(df_tips), use_container_width=True, hide_index=True)
+        st.markdown(render_table(data), unsafe_allow_html=True)
 
     else:  # Match view
         selected_match = st.selectbox("Select match", match_cols)
@@ -276,7 +295,7 @@ else:
             st.caption(f"Kickoff: {t}")
 
         result = facit_for(selected_match)
-        if result:
+        if result and result != "nan":
             st.success(f"Result: **{result}**")
         else:
             st.info("Result not entered yet.")
@@ -286,8 +305,10 @@ else:
             tip   = str(r.get(selected_match, "")).strip()
             entry = {"Name": r.get("Namn", ""), "Tip": tip}
             if result and result != "nan":
-                entry["Pts"] = calc_points(tip, result)
+                entry["Pts"] = pts_cell(calc_points(tip, result))
             data.append(entry)
 
-        df_match = pd.DataFrame(data).sort_values("Name").reset_index(drop=True)
-        st.dataframe(style_pts(df_match), use_container_width=True, hide_index=True)
+        data.sort(key=lambda x: x["Name"])
+        st.markdown(render_table(data), unsafe_allow_html=True)
+
+    # dummy to close out — remove old dataframe tail
