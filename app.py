@@ -101,7 +101,7 @@ GOAL_COL = "Hur många mål görs det totalt under alla 72 matcher i gruppspelet
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load(sheet):
-    return conn.read(worksheet=sheet, ttl=0)
+    return conn.read(worksheet=sheet, ttl=60)
 
 def get_match_cols(df):
     cols = list(df.columns)
