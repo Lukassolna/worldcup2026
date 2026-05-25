@@ -128,167 +128,26 @@ def calc_points(tip, result):
         return 1
     return 0
 
-# --- Sidebar navigation ---
-st.sidebar.title("⚽ World Cup 2026")
+# Build a normalised match name → kickoff time lookup
+SCHEDULE_LOOKUP = {name.replace(" ", "").lower(): dt for name, dt in SCHEDULE}
+
+def kickoff_time(match_col):
+    key = match_col.replace(" ", "").lower()
+    dt  = SCHEDULE_LOOKUP.get(key)
+    return dt.strftime("%d %b %H:%M") if dt else ""
 
 is_admin = "lukas" in st.query_params
 
 if is_admin:
-    page = "🔐 lukasadmin"
-else:
-    page = st.sidebar.radio("", ["🏆 Standings", "📅 Schedule", "🔍 Tips"])
-
-# =========================================================
-# STANDINGS
-# =========================================================
-if page == "🏆 Standings":
-    st.title("🏆 Standings")
-    answers_df = load(ANSWERS_SHEET)
-    facit_df   = load(FACIT_SHEET)
-
-    if answers_df is None or answers_df.empty:
-        st.info("No standings yet.")
-    else:
-        match_cols = get_match_cols(answers_df)
-        facit_row  = facit_df.iloc[0] if facit_df is not None and not facit_df.empty else {}
-
-        rows = []
-        for _, r in answers_df.iterrows():
-            name = r.get("Namn", "")
-            pts  = sum(
-                calc_points(str(r.get(m, "")).strip(), str(facit_row.get(m, "")).strip())
-                for m in match_cols if m in (facit_row if hasattr(facit_row, "__contains__") else {})
-            )
-            rows.append({"Name": name, "Points": pts})
-
-        st.dataframe(
-            pd.DataFrame(rows).sort_values("Points", ascending=False).reset_index(drop=True),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-# =========================================================
-# SCHEDULE
-# =========================================================
-elif page == "📅 Schedule":
-    st.title("📅 Schedule")
-
-    now = datetime.now(STOCKHOLM)
-
-    upcoming = [(name, dt) for name, dt in SCHEDULE if dt >= now]
-    played   = [(name, dt) for name, dt in SCHEDULE if dt < now]
-
-    if upcoming:
-        next_name, next_dt = upcoming[0]
-        delta = next_dt - now
-        days  = delta.days
-        hours = delta.seconds // 3600
-        if days > 0:
-            countdown = f"{days}d {hours}h"
-        else:
-            mins = (delta.seconds % 3600) // 60
-            countdown = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
-        st.info(f"**Next match in {countdown}** — {next_name}  ·  {next_dt.strftime('%a %d %b, %H:%M')}")
-
-    tab_upcoming, tab_all = st.tabs([f"Upcoming ({len(upcoming)})", f"All ({len(SCHEDULE)})"])
-
-    def build_df(matches):
-        return pd.DataFrame(
-            [{"Date": dt.strftime("%a %d %b"), "Time": dt.strftime("%H:%M"), "Match": name}
-             for name, dt in matches]
-        )
-
-    with tab_upcoming:
-        if upcoming:
-            st.dataframe(build_df(upcoming), use_container_width=True, hide_index=True)
-        else:
-            st.success("All group stage matches have been played!")
-
-    with tab_all:
-        df_all = build_df(SCHEDULE)
-        df_all.insert(0, "", ["✅" if dt < now else "🔜" for _, dt in SCHEDULE])
-        st.dataframe(df_all, use_container_width=True, hide_index=True)
-
-# =========================================================
-# TIPS
-# =========================================================
-elif page == "🔍 Tips":
-    st.title("🔍 View Tips")
-
-    answers_df = load(ANSWERS_SHEET)
-    facit_df   = load(FACIT_SHEET)
-
-    if answers_df is None or answers_df.empty:
-        st.warning("No answers found.")
-        st.stop()
-
-    match_cols = get_match_cols(answers_df)
-
-    # Helper: get facit value for a match
-    def facit_for(match):
-        if facit_df is not None and not facit_df.empty and match in facit_df.columns:
-            vals = facit_df[match].dropna()
-            if not vals.empty:
-                return str(vals.iloc[0]).strip()
-        return ""
-
-    view_mode = st.radio("View by", ["Person", "Match"], horizontal=True)
-
-    if view_mode == "Person":
-        names = sorted(answers_df["Namn"].dropna().unique().tolist())
-        selected = st.selectbox("Select person", names)
-        row = answers_df[answers_df["Namn"] == selected].iloc[0]
-
-        st.subheader(f"Tips by {selected}")
-
-        data = []
-        for match in match_cols:
-            tip    = str(row.get(match, "")).strip()
-            result = facit_for(match)
-            entry  = {"Match": match, "Tip": tip}
-            if result:
-                entry["Result"] = result
-                pts = calc_points(tip, result)
-                entry["Pts"] = pts
-            data.append(entry)
-
-        st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
-
-    else:  # Match view
-        selected_match = st.selectbox("Select match", match_cols)
-        st.subheader(f"**{selected_match}**")
-
-        result = facit_for(selected_match)
-        if result:
-            st.success(f"Result: **{result}**")
-        else:
-            st.info("Result not entered yet.")
-
-        data = []
-        for _, r in answers_df.iterrows():
-            tip   = str(r.get(selected_match, "")).strip()
-            entry = {"Name": r.get("Namn", ""), "Tip": tip}
-            if result:
-                entry["Pts"] = calc_points(tip, result)
-            data.append(entry)
-
-        st.dataframe(
-            pd.DataFrame(data).sort_values("Name").reset_index(drop=True),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-# =========================================================
-# ADMIN
-# =========================================================
-elif page == "🔐 lukasadmin":
+    # =========================================================
+    # ADMIN
+    # =========================================================
     st.title("🔐 Admin")
 
     answers_df = load(ANSWERS_SHEET)
     facit_df   = load(FACIT_SHEET)
     match_cols = get_match_cols(answers_df)
 
-    # Build current facit as dict
     current_facit = {col: "" for col in match_cols}
     if facit_df is not None and not facit_df.empty:
         row = facit_df.iloc[0]
@@ -298,7 +157,6 @@ elif page == "🔐 lukasadmin":
                 current_facit[col] = "" if pd.isna(val) else str(val)
 
     st.subheader("Enter Match Result")
-
     col1, col2 = st.columns([3, 1])
     with col1:
         selected_match = st.selectbox("Match", match_cols)
@@ -313,7 +171,6 @@ elif page == "🔐 lukasadmin":
         st.success(f"Saved: {selected_match} → {new_result}")
         st.rerun()
 
-    # Summary of entered results
     st.write("---")
     st.subheader("Results entered so far")
     entered = {k: v for k, v in current_facit.items() if v}
@@ -325,3 +182,112 @@ elif page == "🔐 lukasadmin":
         )
     else:
         st.info("No results entered yet.")
+
+else:
+    # =========================================================
+    # MAIN PAGE (scrollable)
+    # =========================================================
+    answers_df = load(ANSWERS_SHEET)
+    facit_df   = load(FACIT_SHEET)
+
+    def facit_for(match):
+        if facit_df is not None and not facit_df.empty and match in facit_df.columns:
+            vals = facit_df[match].dropna()
+            if not vals.empty:
+                return str(vals.iloc[0]).strip()
+        return ""
+
+    match_cols = get_match_cols(answers_df) if answers_df is not None and not answers_df.empty else []
+    facit_row  = facit_df.iloc[0] if facit_df is not None and not facit_df.empty else {}
+
+    # ---- Standings ----
+    last_update_df = load("LastUpdate")
+    last_updated = ""
+    if last_update_df is not None and not last_update_df.empty:
+        last_updated = str(last_update_df.iloc[0, 0]).strip()
+
+    st.title("🏆 Standings")
+    if last_updated:
+        st.caption(f"Last updated: {last_updated}")
+
+    if answers_df is None or answers_df.empty:
+        st.info("No standings yet.")
+    else:
+        rows = []
+        for _, r in answers_df.iterrows():
+            name = r.get("Namn", "")
+            pts  = sum(
+                calc_points(str(r.get(m, "")).strip(), str(facit_row.get(m, "")).strip())
+                for m in match_cols if m in facit_row
+            )
+            rows.append({"Name": name, "Points": int(pts)})
+
+        st.dataframe(
+            pd.DataFrame(rows).sort_values("Points", ascending=False).reset_index(drop=True),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # ---- Tips ----
+    st.write("---")
+    st.title("🔍 Tips")
+
+    if answers_df is None or answers_df.empty:
+        st.warning("No answers found.")
+        st.stop()
+
+    def style_pts(df):
+        def color(val):
+            if val == 3:
+                return "background-color: #4CAF50; color: white"
+            if val == 1:
+                return "background-color: #CDDC39"
+            return ""
+        if "Pts" in df.columns:
+            df["Pts"] = df["Pts"].astype("Int64")
+            return df.style.map(color, subset=["Pts"])
+        return df.style
+
+    view_mode = st.radio("View by", ["Person", "Match"], horizontal=True)
+
+    if view_mode == "Person":
+        names = sorted(answers_df["Namn"].dropna().unique().tolist())
+        selected = st.selectbox("Select person", names)
+        row = answers_df[answers_df["Namn"] == selected].iloc[0]
+
+        data = []
+        for match in match_cols:
+            tip    = str(row.get(match, "")).strip()
+            result = facit_for(match)
+            entry  = {"Time": kickoff_time(match), "Match": match, "Tip": tip}
+            if result and result != "nan":
+                entry["Result"] = result
+                entry["Pts"] = calc_points(tip, result)
+            data.append(entry)
+
+        df_tips = pd.DataFrame(data)
+        st.dataframe(style_pts(df_tips), use_container_width=True, hide_index=True)
+
+    else:  # Match view
+        selected_match = st.selectbox("Select match", match_cols)
+        st.subheader(f"**{selected_match}**")
+        t = kickoff_time(selected_match)
+        if t:
+            st.caption(f"Kickoff: {t}")
+
+        result = facit_for(selected_match)
+        if result:
+            st.success(f"Result: **{result}**")
+        else:
+            st.info("Result not entered yet.")
+
+        data = []
+        for _, r in answers_df.iterrows():
+            tip   = str(r.get(selected_match, "")).strip()
+            entry = {"Name": r.get("Namn", ""), "Tip": tip}
+            if result and result != "nan":
+                entry["Pts"] = calc_points(tip, result)
+            data.append(entry)
+
+        df_match = pd.DataFrame(data).sort_values("Name").reset_index(drop=True)
+        st.dataframe(style_pts(df_match), use_container_width=True, hide_index=True)
