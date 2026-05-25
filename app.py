@@ -94,9 +94,8 @@ header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-ANSWERS_SHEET  = "Answers"
-FACIT_SHEET    = "Facit"
-STANDINGS_SHEET = "Standings"
+ANSWERS_SHEET = "Answers"
+FACIT_SHEET   = "Facit"
 GOAL_COL = "Hur många mål görs det totalt under alla 72 matcher i gruppspelet?"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -113,6 +112,22 @@ def get_match_cols(df):
     except ValueError:
         return []
 
+def outcome(score):
+    try:
+        h, a = map(int, score.split("-"))
+        return "H" if h > a else ("A" if a > h else "D")
+    except Exception:
+        return None
+
+def calc_points(tip, result):
+    if not result or not tip:
+        return 0
+    if tip == result:
+        return 3
+    if outcome(tip) == outcome(result):
+        return 1
+    return 0
+
 # --- Sidebar navigation ---
 st.sidebar.title("⚽ World Cup 2026")
 
@@ -128,16 +143,29 @@ else:
 # =========================================================
 if page == "🏆 Standings":
     st.title("🏆 Standings")
-    df = load(STANDINGS_SHEET)
-    if df is not None and not df.empty:
-        points_col = df.columns[1]
+    answers_df = load(ANSWERS_SHEET)
+    facit_df   = load(FACIT_SHEET)
+
+    if answers_df is None or answers_df.empty:
+        st.info("No standings yet.")
+    else:
+        match_cols = get_match_cols(answers_df)
+        facit_row  = facit_df.iloc[0] if facit_df is not None and not facit_df.empty else {}
+
+        rows = []
+        for _, r in answers_df.iterrows():
+            name = r.get("Namn", "")
+            pts  = sum(
+                calc_points(str(r.get(m, "")).strip(), str(facit_row.get(m, "")).strip())
+                for m in match_cols if m in (facit_row if hasattr(facit_row, "__contains__") else {})
+            )
+            rows.append({"Name": name, "Points": pts})
+
         st.dataframe(
-            df.sort_values(points_col, ascending=False).reset_index(drop=True),
+            pd.DataFrame(rows).sort_values("Points", ascending=False).reset_index(drop=True),
             use_container_width=True,
             hide_index=True,
         )
-    else:
-        st.info("No standings yet.")
 
 # =========================================================
 # SCHEDULE
@@ -215,18 +243,16 @@ elif page == "🔍 Tips":
 
         data = []
         for match in match_cols:
-            tip       = str(row.get(match, "")).strip()
-            result    = facit_for(match)
-            entry = {"Match": match, "Tip": tip}
+            tip    = str(row.get(match, "")).strip()
+            result = facit_for(match)
+            entry  = {"Match": match, "Tip": tip}
             if result:
                 entry["Result"] = result
-                entry["✓"] = "✅" if tip == result else "❌"
+                pts = calc_points(tip, result)
+                entry["Pts"] = pts
             data.append(entry)
 
         st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
-
-        goal_tip = row.get(GOAL_COL, "")
-        st.caption(f"Total goals guess: **{goal_tip}**")
 
     else:  # Match view
         selected_match = st.selectbox("Select match", match_cols)
@@ -243,7 +269,7 @@ elif page == "🔍 Tips":
             tip   = str(r.get(selected_match, "")).strip()
             entry = {"Name": r.get("Namn", ""), "Tip": tip}
             if result:
-                entry["✓"] = "✅" if tip == result else "❌"
+                entry["Pts"] = calc_points(tip, result)
             data.append(entry)
 
         st.dataframe(
