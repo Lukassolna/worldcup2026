@@ -222,8 +222,11 @@ else:
             )
             rows.append({"Name": name, "Points": int(pts)})
 
+        df_lb = pd.DataFrame(rows).sort_values("Points", ascending=False).reset_index(drop=True)
+        medals = {0: "🥇", 1: "🥈", 2: "🥉"}
+        df_lb.insert(0, "Pos", [medals.get(i, str(i + 1)) for i in df_lb.index])
         st.dataframe(
-            pd.DataFrame(rows).sort_values("Points", ascending=False).reset_index(drop=True),
+            df_lb,
             use_container_width=True,
             hide_index=True,
         )
