@@ -244,8 +244,9 @@ else:
     .tips-table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .tips-table th { background: #444; color: #fff; padding: 4px 6px; text-align: left; font-weight: 600; }
     .tips-table td { padding: 3px 6px; border-bottom: 1px solid #e0e0e0; white-space: nowrap; }
-    .pts-3 { background: #4CAF50; color: white; font-weight: bold; border-radius: 3px; padding: 1px 4px; }
-    .pts-1 { background: #CDDC39; border-radius: 3px; padding: 1px 4px; }
+    .pts-3 { background: #4CAF50; color: #222; font-weight: bold; border-radius: 3px; padding: 1px 4px; }
+    .pts-0 { background: #e53935; color: #222; border-radius: 3px; padding: 1px 4px; }
+    .pts-1 { background: #CDDC39; color: #222; border-radius: 3px; padding: 1px 4px; }
     </style>
     """
 
@@ -255,8 +256,15 @@ else:
         if pts == 1:
             return f'<span class="pts-1">1</span>'
         if pts == 0:
-            return "0"
+            return f'<span class="pts-0">0</span>'
         return ""
+
+    def colored_tip(tip, pts):
+        if pts == 3:
+            return f'<span class="pts-3">{tip}</span>'
+        if pts == 1:
+            return f'<span class="pts-1">{tip}</span>'
+        return f'<span class="pts-0">{tip or "–"}</span>'
 
     def render_table(rows):
         if not rows:
@@ -271,7 +279,7 @@ else:
             trs += f"<tr>{tds}</tr>"
         return TABLE_CSS + f'<table class="tips-table"><thead><tr>{ths}</tr></thead><tbody>{trs}</tbody></table>'
 
-    view_mode = st.radio("View by", ["Person", "Match"], horizontal=True)
+    view_mode = st.radio("View by", ["Matrix", "Match", "Person"], horizontal=True)
 
     if view_mode == "Person":
         names = sorted(answers_df["Namn"].dropna().unique().tolist())
@@ -282,15 +290,16 @@ else:
         for match in match_cols:
             tip    = str(row.get(match, "")).strip()
             result = facit_for(match)
-            entry  = {"Time": kickoff_time(match), "Match": match, "Tip": tip}
             if result and result != "nan":
-                entry["Result"] = result
-                entry["Pts"] = pts_cell(calc_points(tip, result))
+                pts = calc_points(tip, result)
+                entry = {"Time": kickoff_time(match), "Match": match, "Tip": colored_tip(tip, pts), "Result": result, "Pts": pts_cell(pts)}
+            else:
+                entry = {"Time": kickoff_time(match), "Match": match, "Tip": tip or "–"}
             data.append(entry)
 
         st.markdown(render_table(data), unsafe_allow_html=True)
 
-    else:  # Match view
+    elif view_mode == "Match":
         selected_match = st.selectbox("Select match", match_cols)
         st.subheader(f"**{selected_match}**")
         t = kickoff_time(selected_match)
@@ -305,13 +314,60 @@ else:
 
         data = []
         for _, r in answers_df.iterrows():
-            tip   = str(r.get(selected_match, "")).strip()
-            entry = {"Name": r.get("Namn", ""), "Tip": tip}
+            tip = str(r.get(selected_match, "")).strip()
             if result and result != "nan":
-                entry["Pts"] = pts_cell(calc_points(tip, result))
+                pts = calc_points(tip, result)
+                entry = {"Name": r.get("Namn", ""), "Tip": colored_tip(tip, pts), "Pts": pts_cell(pts)}
+            else:
+                entry = {"Name": r.get("Namn", ""), "Tip": tip or "–"}
             data.append(entry)
 
         data.sort(key=lambda x: x["Name"])
         st.markdown(render_table(data), unsafe_allow_html=True)
 
-    # dummy to close out — remove old dataframe tail
+    else:  # Matrix view
+        names = sorted(answers_df["Namn"].dropna().unique().tolist())
+
+        matrix_css = """
+        <style>
+        .matrix-table { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+        .matrix-table th { background: #444; color: #fff; padding: 4px 8px; text-align: center; position: sticky; top: 0; z-index: 1; }
+        .matrix-table td { padding: 3px 6px; border-bottom: 1px solid #e0e0e0; text-align: center; }
+        .matrix-table tr:hover td { background: rgba(100,100,100,0.08); }
+        .matrix-table tr:hover td.pin1, .matrix-table tr:hover td.pin2, .matrix-table tr:hover td.pin3 { background: #1a1d23; }
+        .pin-base { position: sticky; z-index: 2; background: #0e1117; }
+        .matrix-table th.pin1, .matrix-table th.pin2, .matrix-table th.pin3 { position: sticky; z-index: 3; background: #444; text-align: left; }
+        .matrix-table td.pin1, .matrix-table td.pin2, .matrix-table td.pin3 { position: sticky; z-index: 2; background: #0e1117; text-align: left; font-size: 10px; }
+        .matrix-table th.pin1, .matrix-table td.pin1 { left: 0px; min-width: 175px; max-width: 175px; }
+        .matrix-table th.pin2, .matrix-table td.pin2 { left: 175px; min-width: 75px; max-width: 75px; }
+        .matrix-table th.pin3, .matrix-table td.pin3 { left: 250px; min-width: 55px; max-width: 55px; border-right: 1px solid #333; }
+        .c3 { background: #4CAF50; color: #222; font-weight: bold; border-radius: 3px; padding: 1px 5px; }
+        .c0 { background: #e53935; color: #222; border-radius: 3px; padding: 1px 5px; }
+        .c1 { background: #CDDC39; color: #222; border-radius: 3px; padding: 1px 5px; }
+        </style>
+        """
+
+        header_cells = '<th class="pin1">Match</th><th class="pin2">Kickoff</th><th class="pin3">Result</th>'
+        for name in names:
+            header_cells += f"<th>{name}</th>"
+
+        rows_html = ""
+        for match in match_cols:
+            result = facit_for(match)
+            has_result = result and result != "nan"
+            result_td = f'<td class="pin3"><b>{result}</b></td>' if has_result else '<td class="pin3">–</td>'
+            row_html = f'<td class="pin1">{match}</td><td class="pin2" style="color:#888">{kickoff_time(match)}</td>{result_td}'
+            for name in names:
+                person_row = answers_df[answers_df["Namn"] == name]
+                tip = str(person_row.iloc[0].get(match, "")).strip() if not person_row.empty else ""
+                if has_result:
+                    pts = calc_points(tip, result)
+                    css = "c3" if pts == 3 else ("c1" if pts == 1 else "c0")
+                    cell = f'<td><span class="{css}">{tip or "–"}</span></td>'
+                else:
+                    cell = f"<td>{tip or '–'}</td>"
+                row_html += cell
+            rows_html += f"<tr>{row_html}</tr>"
+
+        html = matrix_css + f'<div style="overflow-x:auto"><table class="matrix-table"><thead><tr>{header_cells}</tr></thead><tbody>{rows_html}</tbody></table></div>'
+        st.markdown(html, unsafe_allow_html=True)
