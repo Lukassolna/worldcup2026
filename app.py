@@ -330,7 +330,7 @@ else:
 
         matrix_css = """
         <style>
-        .matrix-table { border-collapse: collapse; font-size: 9px; white-space: nowrap; }
+        .matrix-table { border-collapse: collapse; font-size: 7px; white-space: nowrap; }
         .matrix-table th { background: #444; color: #fff; padding: 3px 5px; text-align: center; position: sticky; top: 0; z-index: 1; }
         .matrix-table td { padding: 2px 4px; border-bottom: 1px solid #e0e0e0; text-align: center; }
         .matrix-table tr:hover td { background: rgba(100,100,100,0.08); }
@@ -339,8 +339,8 @@ else:
         .matrix-table th.pin1, .matrix-table th.pin2, .matrix-table th.pin3 { position: sticky; z-index: 3; background: #444; text-align: left; }
         .matrix-table td.pin1, .matrix-table td.pin2, .matrix-table td.pin3 { position: sticky; z-index: 2; background: #0e1117; text-align: left; }
         .matrix-table th.pin1, .matrix-table td.pin1 { left: 0px; min-width: 110px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
-        .matrix-table th.pin2, .matrix-table td.pin2 { left: 110px; min-width: 60px; max-width: 60px; }
-        .matrix-table th.pin3, .matrix-table td.pin3 { left: 170px; min-width: 45px; max-width: 45px; border-right: 1px solid #333; }
+        .matrix-table th.pin2, .matrix-table td.pin2 { left: 110px; min-width: 45px; max-width: 45px; }
+        .matrix-table th.pin3, .matrix-table td.pin3 { left: 155px; min-width: 35px; max-width: 35px; border-right: 1px solid #333; }
         .c3 { background: #4CAF50; color: #222; font-weight: bold; border-radius: 3px; padding: 1px 5px; }
         .c0 { background: #e53935; color: #222; border-radius: 3px; padding: 1px 5px; }
         .c1 { background: #CDDC39; color: #222; border-radius: 3px; padding: 1px 5px; }
