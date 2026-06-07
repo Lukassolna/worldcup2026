@@ -330,7 +330,7 @@ else:
 
         matrix_css = """
         <style>
-        .matrix-table { border-collapse: collapse; font-size: 7px; white-space: nowrap; }
+        .matrix-table { border-collapse: collapse; font-size: 9px; white-space: nowrap; }
         .matrix-table th { background: #444; color: #fff; padding: 3px 5px; text-align: center; position: sticky; top: 0; z-index: 1; }
         .matrix-table td { padding: 2px 4px; border-bottom: 1px solid #e0e0e0; text-align: center; }
         .matrix-table tr:hover td { background: rgba(100,100,100,0.08); }
