@@ -279,7 +279,7 @@ else:
             trs += f"<tr>{tds}</tr>"
         return TABLE_CSS + f'<table class="tips-table"><thead><tr>{ths}</tr></thead><tbody>{trs}</tbody></table>'
 
-    view_mode = st.radio("View by", ["Matrix", "Match", "Person"], horizontal=True)
+    view_mode = st.radio("View by", ["Table", "Match", "Person"], horizontal=True)
 
     if view_mode == "Person":
         names = sorted(answers_df["Namn"].dropna().unique().tolist())
