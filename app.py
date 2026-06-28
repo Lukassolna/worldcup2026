@@ -1,8 +1,12 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+from streamlit_echarts import st_echarts
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+# Hardcoded eventual winner — highlighted in the race view
+LEADER = "Ogge"
 
 STOCKHOLM = ZoneInfo("Europe/Stockholm")
 
@@ -200,132 +204,141 @@ else:
     match_cols = get_match_cols(answers_df) if answers_df is not None and not answers_df.empty else []
     facit_row  = facit_df.iloc[0] if facit_df is not None and not facit_df.empty else {}
 
-    # ---- Standings ----
-    last_update_df = load("LastUpdate")
-    last_updated = ""
-    if last_update_df is not None and not last_update_df.empty:
-        last_updated = str(last_update_df.iloc[0, 0]).strip()
-
-    st.title("🏆 Standings")
-    if last_updated:
-        st.caption(f"Last updated: {last_updated}")
+    # ---- Header ----
+    st.title("🏆 Thanks for playing!")
+    st.subheader(f"The winner is {LEADER} 🥇")
 
     if answers_df is None or answers_df.empty:
-        st.info("No standings yet.")
-    else:
-        rows = []
-        for _, r in answers_df.iterrows():
-            name = r.get("Namn", "")
-            pts  = sum(
-                calc_points(str(r.get(m, "")).strip(), str(facit_row.get(m, "")).strip())
-                for m in match_cols if m in facit_row
-            )
-            rows.append({"Name": name, "Points": int(pts)})
+        st.info("No results yet.")
+        st.stop()
 
-        df_lb = pd.DataFrame(rows).sort_values("Points", ascending=False).reset_index(drop=True)
-        medals = {0: "🥇", 1: "🥈", 2: "🥉"}
-        df_lb.insert(0, "Pos", [medals.get(i, str(i + 1)) for i in df_lb.index])
-        st.dataframe(
-            df_lb,
-            use_container_width=True,
-            hide_index=True,
+    names = sorted(answers_df["Namn"].dropna().unique().tolist())
+    player_rows = {name: answers_df[answers_df["Namn"] == name].iloc[0] for name in names}
+
+    # ---- Final standings ----
+    standings = []
+    for name in names:
+        pr = player_rows[name]
+        pts = sum(
+            calc_points(str(pr.get(m, "")).strip(), str(facit_row.get(m, "")).strip())
+            for m in match_cols if m in facit_row
+        )
+        standings.append({"Name": name, "Points": int(pts)})
+    df_lb = pd.DataFrame(standings).sort_values("Points", ascending=False).reset_index(drop=True)
+    medals = {0: "🥇", 1: "🥈", 2: "🥉"}
+    df_lb.insert(0, "Pos", [medals.get(i, str(i + 1)) for i in df_lb.index])
+
+    # ---- Final standings (top) ----
+    st.subheader("Final Standings")
+    st.dataframe(df_lb, use_container_width=True, hide_index=True)
+
+    # ---- Match-by-match race ----
+    st.write("---")
+    st.subheader("Race")
+
+    # Matches with a result + known kickoff, in chronological order
+    records = []  # (kickoff, match, result)
+    for m in match_cols:
+        result = facit_for(m)
+        if not result or result == "nan":
+            continue
+        dt = SCHEDULE_LOOKUP.get(m.replace(" ", "").lower())
+        if dt is None:
+            continue
+        records.append((dt, m, result))
+    records.sort(key=lambda x: x[0])
+
+    if not records:
+        st.info("No results entered yet — the race will appear once results come in.")
+    else:
+        default_idx = names.index(LEADER) if LEADER in names else 0
+        highlight = st.selectbox("Highlight player and press Play ▶", names, index=default_idx)
+
+        # Cumulative standings snapshot after each match
+        running = {name: 0 for name in names}
+        steps = []  # (label, state)
+        for dt, m, result in records:
+            for name in names:
+                tip = str(player_rows[name].get(m, "")).strip()
+                running[name] += calc_points(tip, result)
+            steps.append((f"{m}  →  {result}", dict(running)))
+
+        max_pts = max(max(s.values()) for _, s in steps)
+
+        # ECharts bar race: realtimeSort slides bars past each other smoothly.
+        # yAxis keeps the fixed name order; realtimeSort reorders the bars (and
+        # their axis labels) by value each step.
+        BLUE, GOLD = "#4C8BF5", "#FFD700"
+
+        def data_for(state):
+            return [
+                {"value": state[n],
+                 "itemStyle": {"color": GOLD if n == highlight else BLUE}}
+                for n in names
+            ]
+
+        base_option = {
+            "timeline": {
+                "data": [str(i + 1) for i in range(len(steps))],
+                "axisType": "category",
+                "autoPlay": False,
+                "loop": False,
+                "playInterval": 900,
+                "top": 8, "left": "12%", "right": "12%",
+                "symbol": "none",
+                "controlPosition": "left",
+                "label": {"formatter": "{value}", "interval": max(1, len(steps) // 12)},
+                "controlStyle": {
+                    "showPlayBtn": True, "showPrevBtn": True, "showNextBtn": True,
+                    "itemSize": 30, "itemGap": 16,
+                    "color": "#4C8BF5", "borderColor": "#4C8BF5", "borderWidth": 2,
+                },
+                "checkpointStyle": {"color": "#FFD700", "borderColor": "#FFD700"},
+            },
+            "grid": {"top": 95, "bottom": 30, "left": 90, "right": 70},
+            "xAxis": {
+                "type": "value",
+                "max": round(max_pts * 1.15) + 1,
+                "splitLine": {"lineStyle": {"type": "dashed"}},
+            },
+            "yAxis": {
+                "type": "category",
+                "data": names,
+                "inverse": True,
+                "animationDuration": 300,
+                "animationDurationUpdate": 300,
+            },
+            "animationDuration": 0,
+            "animationDurationUpdate": 800,
+            "animationEasing": "linear",
+            "animationEasingUpdate": "cubicOut",
+            "series": [],
+        }
+
+        options = [
+            {
+                "title": {"text": label, "left": "center", "top": 50, "textStyle": {"fontSize": 15}},
+                "series": [{
+                    "type": "bar",
+                    "realtimeSort": True,
+                    "data": data_for(state),
+                    "label": {"show": True, "position": "right",
+                              "valueAnimation": True, "fontWeight": "bold"},
+                }],
+            }
+            for label, state in steps
+        ]
+
+        st_echarts(
+            options={"baseOption": base_option, "options": options},
+            height=f"{max(360, 26 * len(names) + 130)}px",
         )
 
-    # ---- Tips ----
+    # ---- Full tips matrix ----
     st.write("---")
     st.title("🔍 Tips")
 
-    if answers_df is None or answers_df.empty:
-        st.warning("No answers found.")
-        st.stop()
-
-    TABLE_CSS = """
-    <style>
-    .tips-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    .tips-table th { background: #444; color: #fff; padding: 4px 6px; text-align: left; font-weight: 600; }
-    .tips-table td { padding: 3px 6px; border-bottom: 1px solid #e0e0e0; white-space: nowrap; }
-    .pts-3 { background: #4CAF50; color: #222; font-weight: bold; border-radius: 3px; padding: 1px 4px; }
-    .pts-0 { background: #e53935; color: #222; border-radius: 3px; padding: 1px 4px; }
-    .pts-1 { background: #CDDC39; color: #222; border-radius: 3px; padding: 1px 4px; }
-    </style>
-    """
-
-    def pts_cell(pts):
-        if pts == 3:
-            return f'<span class="pts-3">3</span>'
-        if pts == 1:
-            return f'<span class="pts-1">1</span>'
-        if pts == 0:
-            return f'<span class="pts-0">0</span>'
-        return ""
-
-    def colored_tip(tip, pts):
-        if pts == 3:
-            return f'<span class="pts-3">{tip}</span>'
-        if pts == 1:
-            return f'<span class="pts-1">{tip}</span>'
-        return f'<span class="pts-0">{tip or "–"}</span>'
-
-    def render_table(rows):
-        if not rows:
-            return ""
-        headers = list(rows[0].keys())
-        ths = "".join(f"<th>{h}</th>" for h in headers)
-        trs = ""
-        for row in rows:
-            tds = ""
-            for h, v in row.items():
-                tds += f"<td>{v}</td>"
-            trs += f"<tr>{tds}</tr>"
-        return TABLE_CSS + f'<table class="tips-table"><thead><tr>{ths}</tr></thead><tbody>{trs}</tbody></table>'
-
-    view_mode = st.radio("View by", ["Table", "Match", "Person"], horizontal=True)
-
-    if view_mode == "Person":
-        names = sorted(answers_df["Namn"].dropna().unique().tolist())
-        selected = st.selectbox("Select person", names)
-        row = answers_df[answers_df["Namn"] == selected].iloc[0]
-
-        data = []
-        for match in match_cols:
-            tip    = str(row.get(match, "")).strip()
-            result = facit_for(match)
-            if result and result != "nan":
-                pts = calc_points(tip, result)
-                entry = {"Time": kickoff_time(match), "Match": match, "Tip": colored_tip(tip, pts), "Result": result, "Pts": pts_cell(pts)}
-            else:
-                entry = {"Time": kickoff_time(match), "Match": match, "Tip": tip or "–"}
-            data.append(entry)
-
-        st.markdown(render_table(data), unsafe_allow_html=True)
-
-    elif view_mode == "Match":
-        selected_match = st.selectbox("Select match", match_cols)
-        st.subheader(f"**{selected_match}**")
-        t = kickoff_time(selected_match)
-        if t:
-            st.caption(f"Kickoff: {t}")
-
-        result = facit_for(selected_match)
-        if result and result != "nan":
-            st.success(f"Result: **{result}**")
-        else:
-            st.info("Result not entered yet.")
-
-        data = []
-        for _, r in answers_df.iterrows():
-            tip = str(r.get(selected_match, "")).strip()
-            if result and result != "nan":
-                pts = calc_points(tip, result)
-                entry = {"Name": r.get("Namn", ""), "Tip": colored_tip(tip, pts), "Pts": pts_cell(pts)}
-            else:
-                entry = {"Name": r.get("Namn", ""), "Tip": tip or "–"}
-            data.append(entry)
-
-        data.sort(key=lambda x: x["Name"])
-        st.markdown(render_table(data), unsafe_allow_html=True)
-
-    else:  # Matrix view
+    if True:  # Full tips matrix
         names = sorted(answers_df["Namn"].dropna().unique().tolist())
 
         matrix_css = """
